@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime, timezone
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 
 app = Flask(__name__)
 
@@ -62,14 +62,101 @@ JOURNAL = [
     {"id": "t002", "symbol": "TCS", "result_r": -1.0, "date": "2026-06-03", "followed_rules": True},
 ]
 
+TOOLS_LIST = [
+    {
+        "name": "get_watchlist",
+        "description": "Get RVATF tracked NSE symbols",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "enabled_only": {"type": "boolean", "description": "Filter enabled symbols only"}
+            }
+        }
+    },
+    {
+        "name": "get_risk_rules",
+        "description": "Get current RVATF risk and control rules",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_backtest_summary",
+        "description": "Get backtest summary for a strategy",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "strategy": {"type": "string", "description": "Strategy name e.g. mtf_swing_v1"}
+            },
+            "required": ["strategy"]
+        }
+    },
+    {
+        "name": "get_live_positions",
+        "description": "Get current live trading positions",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_trade_journal",
+        "description": "Get recent trade journal entries",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Number of entries to return"}
+            }
+        }
+    },
+    {
+        "name": "get_system_status",
+        "description": "Get RVATF system and risk guard status",
+        "inputSchema": {"type": "object", "properties": {}}
+    }
+]
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def check_auth():
-    key = request.headers.get("X-API-Key")
-    return key == API_KEY
+def mcp_response(req_id, result):
+    return jsonify({"jsonrpc": "2.0", "id": req_id, "result": result})
+
+
+def mcp_error(req_id, code, message):
+    return jsonify({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
+
+
+def execute_tool(name, args):
+    if name == "get_watchlist":
+        enabled_only = args.get("enabled_only", False)
+        items = [x for x in WATCHLIST if x["enabled"]] if enabled_only else WATCHLIST
+        return {"count": len(items), "items": items, "time": now_iso()}
+
+    if name == "get_risk_rules":
+        return {"rules": RISK_RULES, "time": now_iso()}
+
+    if name == "get_backtest_summary":
+        strategy = args.get("strategy")
+        result = BACKTESTS.get(strategy)
+        if not result:
+            raise ValueError(f"Unknown strategy: {strategy}")
+        return {"summary": result, "time": now_iso()}
+
+    if name == "get_live_positions":
+        return {"count": len(POSITIONS), "positions": POSITIONS, "time": now_iso()}
+
+    if name == "get_trade_journal":
+        limit = int(args.get("limit", 20))
+        return {"count": min(limit, len(JOURNAL)), "items": JOURNAL[:limit], "time": now_iso()}
+
+    if name == "get_system_status":
+        return {
+            "framework": "RVATF",
+            "mode": "read-only",
+            "kill_switch": True,
+            "max_positions": 1,
+            "time": now_iso()
+        }
+
+    raise ValueError(f"Unknown tool: {name}")
 
 
 @app.route("/health", methods=["GET"])
@@ -77,68 +164,56 @@ def health():
     return jsonify({"ok": True, "service": "rvatf-mcp", "time": now_iso()})
 
 
-@app.route("/tools", methods=["GET"])
-def tools():
-    if not check_auth():
-        return jsonify({"error": "unauthorized"}), 401
-    return jsonify({
-        "name": "RVATF MCP Connector",
-        "mode": "read-only",
-        "tools": [
-            "health_check",
-            "get_watchlist",
-            "get_risk_rules",
-            "get_backtest_summary",
-            "get_live_positions",
-            "get_trade_journal",
-            "get_system_status"
-        ]
-    })
-
-
-@app.route("/call", methods=["POST"])
-def call():
-    if not check_auth():
-        return jsonify({"error": "unauthorized"}), 401
-    data = request.get_json(force=True)
-    tool = data.get("tool")
-    args = data.get("arguments", {})
-
-    if tool == "health_check":
-        return jsonify({"ok": True, "time": now_iso()})
-
-    if tool == "get_watchlist":
-        enabled_only = args.get("enabled_only", False)
-        items = [x for x in WATCHLIST if x["enabled"]] if enabled_only else WATCHLIST
-        return jsonify({"count": len(items), "items": items, "time": now_iso()})
-
-    if tool == "get_risk_rules":
-        return jsonify({"rules": RISK_RULES, "time": now_iso()})
-
-    if tool == "get_backtest_summary":
-        strategy = args.get("strategy")
-        result = BACKTESTS.get(strategy)
-        if not result:
-            return jsonify({"error": f"Unknown strategy: {strategy}"}), 400
-        return jsonify({"summary": result, "time": now_iso()})
-
-    if tool == "get_live_positions":
-        return jsonify({"count": len(POSITIONS), "positions": POSITIONS, "time": now_iso()})
-
-    if tool == "get_trade_journal":
-        limit = int(args.get("limit", 20))
-        return jsonify({"count": min(limit, len(JOURNAL)), "items": JOURNAL[:limit], "time": now_iso()})
-
-    if tool == "get_system_status":
+@app.route("/", methods=["POST", "GET"])
+@app.route("/mcp", methods=["POST", "GET"])
+def mcp_endpoint():
+    if request.method == "GET":
         return jsonify({
-            "framework": "RVATF",
-            "mode": "read-only",
-            "kill_switch": True,
-            "max_positions": 1,
-            "time": now_iso()
+            "name": "RVATF MCP Connector",
+            "version": "2.0.0",
+            "description": "RVATF trading framework connector for NSE markets"
         })
 
-    return jsonify({"error": f"Unknown tool: {tool}"}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    method = data.get("method", "")
+    req_id = data.get("id", 1)
+    params = data.get("params", {})
+
+    if method == "initialize":
+        return mcp_response(req_id, {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {
+                "tools": {"listChanged": False}
+            },
+            "serverInfo": {
+                "name": "RVATF MCP Connector",
+                "version": "2.0.0"
+            }
+        })
+
+    if method == "notifications/initialized":
+        return Response(status=204)
+
+    if method == "tools/list":
+        return mcp_response(req_id, {"tools": TOOLS_LIST})
+
+    if method == "tools/call":
+        tool_name = params.get("name")
+        tool_args = params.get("arguments", {})
+        try:
+            result = execute_tool(tool_name, tool_args)
+            return mcp_response(req_id, {
+                "content": [{"type": "text", "text": json.dumps(result, indent=2)}]
+            })
+        except ValueError as e:
+            return mcp_error(req_id, -32602, str(e))
+        except Exception as e:
+            return mcp_error(req_id, -32603, str(e))
+
+    if method == "ping":
+        return mcp_response(req_id, {})
+
+    return mcp_error(req_id, -32601, f"Method not found: {method}")
 
 
 if __name__ == "__main__":
