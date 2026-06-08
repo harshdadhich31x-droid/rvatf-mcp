@@ -1,11 +1,15 @@
 import os
 import json
+import uuid
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify, Response
 
 app = Flask(__name__)
 
 API_KEY = os.environ.get("RVATF_API_KEY", "change-me")
+BASE_URL = os.environ.get("BASE_URL", "https://rvatf-mcp.onrender.com")
+
+REGISTERED_CLIENTS = {}
 
 WATCHLIST = [
     {"symbol": "RELIANCE", "segment": "NSE_EQ", "enabled": True},
@@ -129,24 +133,19 @@ def execute_tool(name, args):
         enabled_only = args.get("enabled_only", False)
         items = [x for x in WATCHLIST if x["enabled"]] if enabled_only else WATCHLIST
         return {"count": len(items), "items": items, "time": now_iso()}
-
     if name == "get_risk_rules":
         return {"rules": RISK_RULES, "time": now_iso()}
-
     if name == "get_backtest_summary":
         strategy = args.get("strategy")
         result = BACKTESTS.get(strategy)
         if not result:
             raise ValueError(f"Unknown strategy: {strategy}")
         return {"summary": result, "time": now_iso()}
-
     if name == "get_live_positions":
         return {"count": len(POSITIONS), "positions": POSITIONS, "time": now_iso()}
-
     if name == "get_trade_journal":
         limit = int(args.get("limit", 20))
         return {"count": min(limit, len(JOURNAL)), "items": JOURNAL[:limit], "time": now_iso()}
-
     if name == "get_system_status":
         return {
             "framework": "RVATF",
@@ -155,8 +154,71 @@ def execute_tool(name, args):
             "max_positions": 1,
             "time": now_iso()
         }
-
     raise ValueError(f"Unknown tool: {name}")
+
+
+@app.route("/.well-known/oauth-authorization-server", methods=["GET"])
+@app.route("/.well-known/oauth-authorization-server/", methods=["GET"])
+def oauth_metadata():
+    return jsonify({
+        "issuer": BASE_URL,
+        "authorization_endpoint": f"{BASE_URL}/authorize",
+        "token_endpoint": f"{BASE_URL}/token",
+        "registration_endpoint": f"{BASE_URL}/register",
+        "scopes_supported": ["mcp"],
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "client_credentials"],
+        "token_endpoint_auth_methods_supported": ["none", "client_secret_basic"],
+        "code_challenge_methods_supported": ["S256"],
+    })
+
+
+@app.route("/register", methods=["POST"])
+def register_client():
+    body = request.get_json(force=True, silent=True) or {}
+    client_id = str(uuid.uuid4())
+    client_secret = str(uuid.uuid4())
+    REGISTERED_CLIENTS[client_id] = {
+        "client_secret": client_secret,
+        "redirect_uris": body.get("redirect_uris", []),
+        "client_name": body.get("client_name", "MCP Client"),
+        "grant_types": body.get("grant_types", ["authorization_code"]),
+        "response_types": body.get("response_types", ["code"]),
+        "scope": body.get("scope", "mcp"),
+    }
+    resp = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "client_id_issued_at": int(datetime.now(timezone.utc).timestamp()),
+        "client_secret_expires_at": 0,
+        "redirect_uris": REGISTERED_CLIENTS[client_id]["redirect_uris"],
+        "client_name": REGISTERED_CLIENTS[client_id]["client_name"],
+        "grant_types": REGISTERED_CLIENTS[client_id]["grant_types"],
+        "response_types": REGISTERED_CLIENTS[client_id]["response_types"],
+        "scope": REGISTERED_CLIENTS[client_id]["scope"],
+        "token_endpoint_auth_method": "none",
+    }
+    return jsonify(resp), 201
+
+
+@app.route("/authorize", methods=["GET"])
+def authorize():
+    redirect_uri = request.args.get("redirect_uri", "")
+    state = request.args.get("state", "")
+    code = str(uuid.uuid4())
+    sep = "&" if "?" in redirect_uri else "?"
+    location = f"{redirect_uri}{sep}code={code}&state={state}"
+    return Response(status=302, headers={"Location": location})
+
+
+@app.route("/token", methods=["POST"])
+def token():
+    return jsonify({
+        "access_token": "rvatf-static-token",
+        "token_type": "Bearer",
+        "expires_in": 86400,
+        "scope": "mcp",
+    })
 
 
 @app.route("/health", methods=["GET"])
