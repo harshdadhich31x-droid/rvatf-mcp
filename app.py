@@ -269,6 +269,29 @@ def token():
 def health():
     return jsonify({"ok": True, "service": "rvatf-mindset-mcp", "time": now_iso()})
 
+
+# REST API Endpoints (for browsers/Perplexity)
+@app.route("/api/mindsets", methods=["GET"])
+def api_mindsets():
+    return jsonify({"mindsets": MINDSETS, "count": len(MINDSETS), "time": now_iso()})
+
+@app.route("/api/risk-rules", methods=["GET"])
+def api_risk_rules():
+    return jsonify({"risk_rules": RISK_RULES, "time": now_iso()})
+
+@app.route("/api/knowledge", methods=["GET"])
+def api_knowledge():
+    return jsonify({"domains": KNOWLEDGE_DOMAINS, "count": len(KNOWLEDGE_DOMAINS), "time": now_iso()})
+
+@app.route("/api/prep", methods=["GET"])
+def api_prep():
+    return jsonify({"checklist": PREP_CHECKLIST, "count": len(PREP_CHECKLIST), "time": now_iso()})
+
+@app.route("/api/resources", methods=["GET"])
+def api_resources():
+    return jsonify({"resources": RESOURCES, "count": len(RESOURCES), "time": now_iso()})
+
+
 @app.route("/", methods=["POST", "GET"])
 @app.route("/mcp", methods=["POST", "GET"])
 def mcp_endpoint():
