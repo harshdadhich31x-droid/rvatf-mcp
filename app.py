@@ -281,12 +281,11 @@ def api_risk_rules():
 
 @app.route("/api/knowledge", methods=["GET"])
 def api_knowledge():
-    return jsonify({"domains": KNOWLEDGE_DOMAINS, "count": len(KNOWLEDGE_DOMAINS), "tim
-    
-                    @app.route("/api/domains", methods=["GET"])
-def api_domains():
-    return jsonify({"domains": KNOWLEDGE_DOMAINS, "count": len(KNOWLEDGE_DOMAINS), "time": now_iso()})e": now_iso()})
+    return jsonify({"domains": KNOWLEDGE_DOMAINS, "count": len(KNOWLEDGE_DOMAINS), "time": now_iso()})
 
+@app.route("/api/domains", methods=["GET"])
+def api_domains():
+    return jsonify({"domains": KNOWLEDGE_DOMAINS, "count": len(KNOWLEDGE_DOMAINS), "time": now_iso()})
 @app.route("/api/prep", methods=["GET"])
 def api_prep():
     return jsonify({"checklist": PREP_CHECKLIST, "count": len(PREP_CHECKLIST), "time": now_iso()})
