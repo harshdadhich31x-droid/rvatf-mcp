@@ -8,154 +8,202 @@ app = Flask(__name__)
 
 API_KEY = os.environ.get("RVATF_API_KEY", "change-me")
 BASE_URL = os.environ.get("BASE_URL", "https://rvatf-mcp.onrender.com")
-
 REGISTERED_CLIENTS = {}
 
-WATCHLIST = [
-    {"symbol": "RELIANCE", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "HDFCBANK", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "INFY", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "TCS", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "ICICIBANK", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "AXISBANK", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "SBIN", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "BAJFINANCE", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "WIPRO", "segment": "NSE_EQ", "enabled": True},
-    {"symbol": "HCLTECH", "segment": "NSE_EQ", "enabled": True},
+# RVATF Mindset Framework
+MINDSETS = [
+    {
+        "rank": 1,
+        "name": "Risk-first",
+        "why": "With MTF leverage + one concentrated position, you die from risk failures, not signal failures. Survival before return.",
+        "practice": "Always ask 'what's my worst case?' before 'what's my profit?' Size for the gap, respect the stop, never override."
+    },
+    {
+        "rank": 2,
+        "name": "Systematic / probabilistic",
+        "why": "Your whole system is rules played repeatedly. You're buying an edge over many trades, not 'calling' a stock.",
+        "practice": "Think in win rate, expectancy, R-multiples — distributions, not predictions. One trade's outcome means nothing; 200 do."
+    },
+    {
+        "rank": 3,
+        "name": "Scientific / skeptical",
+        "why": "You must be willing to kill your own strategy if data says it has no edge. Falling in love with it loses money.",
+        "practice": "Treat every belief as a hypothesis to disprove. Confirmation bias is the trader-killer."
+    },
+    {
+        "rank": 4,
+        "name": "Behavioral discipline",
+        "why": "You already felt it — 'hold the quality stock that gapped.' The system's biggest enemy is you overriding it.",
+        "practice": "Pre-commit to rules; remove your own discretion (that's why the auto-stop exists). Beat fear, greed, revenge."
+    },
+    {
+        "rank": 5,
+        "name": "Patience / process",
+        "why": "One position + wait-for-setup means sitting in cash is the correct move most days. Overtrading kills accounts.",
+        "practice": "'No trade' is a position. Play the long game (you said build for the end)."
+    },
+    {
+        "rank": 6,
+        "name": "Engineering reliability",
+        "why": "It's automated — a bug, outage, or unhandled error at the wrong moment = real loss.",
+        "practice": "Build for failure: error handling, kill switch, monitoring, secrets safety. Assume things break."
+    }
 ]
 
-BACKTESTS = {
-    "mtf_swing_v1": {
-        "strategy": "mtf_swing_v1",
-        "trades": 214,
-        "win_rate": 0.47,
-        "avg_win_r": 2.1,
-        "avg_loss_r": -1.0,
-        "expectancy_r": 0.17,
-        "max_drawdown_pct": 11.8,
-        "profit_factor": 1.42,
-        "out_of_sample_passed": True,
-    }
-}
+KNOWLEDGE_DOMAINS = [
+    {"id": 7, "domain": "Statistics (sample size, overfitting, signal vs noise)", "why": "To tell a real edge from a curve-fit backtest. The single skill that separates winners from the deluded."},
+    {"id": 8, "domain": "Backtesting method (look-ahead bias, out-of-sample, reproducibility)", "why": "A flawed backtest gives false confidence and loses live money."},
+    {"id": 9, "domain": "Costs & microstructure (slippage, spreads, liquidity, fills)", "why": "Small-target swing systems live or die on costs — a 'profitable' backtest can be a live loser."},
+    {"id": 10, "domain": "Market mechanics (NSE, T+1, MTF margin, circuits, sessions, F&O influence)", "why": "You must know the plumbing you trade in."},
+    {"id": 11, "domain": "Capital & compounding math (drawdown recovery, position-sizing math)", "why": "How ₹10L actually survives and grows; a 50% loss needs 100% gain to recover."},
+    {"id": 12, "domain": "Regulation (SEBI algo framework, broker terms)", "why": "Stay legal — and essential if you ever commercialize."},
+    {"id": 13, "domain": "Edge-decay awareness / live-vs-backtest monitoring", "why": "The meta-skill veterans learn the hard way: a working edge stops working. Track live results against backtest expectations and know when it breaks."},
+    {"id": 14, "domain": "Data integrity", "why": "Survivorship bias, corporate-action adjustment, clean data. Bad data = a beautiful backtest that's pure fiction."}
+]
 
 RISK_RULES = {
-    "framework": "RVATF",
-    "broker": "Dhan",
-    "market": "NSE",
-    "product": "MTF",
-    "max_positions": 1,
-    "max_risk_per_trade_pct": 1.0,
-    "kill_switch_enabled": True,
-    "override_allowed": False,
+    "framework": "RVATF - Risk-Validated Automated Trading Framework",
+    "core_principles": [
+        "Risk before return — size for survival, not profit",
+        "1% max risk per trade (hard limit)",
+        "One position at a time (concentrated but controlled)",
+        "MTF leverage — know your margin, gap risk, interest cost",
+        "Auto-stop mandatory — no discretion to override",
+        "Kill switch enabled — circuit breaker for disaster",
+        "Cash is a position — most days you do nothing"
+    ],
+    "forbidden_behaviors": [
+        "Overriding stops based on 'feeling'",
+        "Revenge trading after a loss",
+        "Doubling position size to 'make it back'",
+        "Trading without a setup",
+        "Ignoring costs/slippage in backtest"
+    ]
 }
 
-POSITIONS = [
-    {
-        "symbol": "RELIANCE",
-        "qty": 10,
-        "avg_price": 2940.5,
-        "last_price": 2962.0,
-        "unrealized_pnl": 215.0,
-        "product": "MTF",
-        "risk_state": "within_limits",
-    }
+PREP_CHECKLIST = [
+    "Get clean historical price data for backtest (the #1 prerequisite)",
+    "Learn backtesting pitfalls (look-ahead, overfitting) — or your backtest lies to you",
+    "Verify Dhan account + API access and read MTF terms (interest slab, margin-call mechanics)",
+    "Write down your 'edge proven' bar — exact numbers (win rate, expectancy, max DD) that mean go/no-go",
+    "Internalize the risk rules until you won't override them under stress"
 ]
 
-JOURNAL = [
-    {"id": "t001", "symbol": "INFY", "result_r": 1.8, "date": "2026-06-01", "followed_rules": True},
-    {"id": "t002", "symbol": "TCS", "result_r": -1.0, "date": "2026-06-03", "followed_rules": True},
+RESOURCES = [
+    {"name": "Zerodha Varsity", "topics": "Technical analysis, markets, trading psychology", "why": "Free, India-specific, excellent starting point"},
+    {"name": "Van Tharp - Trade Your Way to Financial Freedom", "topics": "Expectancy, position sizing, psychology", "why": "Core mindset and risk framework"},
+    {"name": "Ernie Chan - Quantitative Trading", "topics": "Backtesting and quant method", "why": "How to test an edge properly"},
+    {"name": "Daniel Kahneman - Thinking, Fast and Slow", "topics": "Cognitive biases", "why": "The biases you're fighting in yourself"}
 ]
 
 TOOLS_LIST = [
     {
-        "name": "get_watchlist",
-        "description": "Get RVATF tracked NSE symbols",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "enabled_only": {"type": "boolean", "description": "Filter enabled symbols only"}
-            }
-        }
+        "name": "get_mindsets",
+        "description": "Get the 6 core RVATF mindsets ranked by importance (risk-first, systematic, scientific, behavioral, patience, engineering)",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_knowledge_domains",
+        "description": "Get the 8 knowledge domains required for RVATF (statistics, backtesting, costs, markets, capital math, regulation, edge-decay, data integrity)",
+        "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "get_risk_rules",
-        "description": "Get current RVATF risk and control rules",
+        "description": "Get RVATF core risk rules (1% max risk, one position, auto-stop, kill switch, forbidden behaviors)",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_backtest_summary",
-        "description": "Get backtest summary for a strategy",
+        "name": "get_prep_checklist",
+        "description": "Get the 5-step prep checklist before building RVATF system",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_resources",
+        "description": "Get recommended learning resources (books, courses) for RVATF mindset and knowledge",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "check_decision",
+        "description": "Check if a trading decision aligns with RVATF mindset and rules",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "strategy": {"type": "string", "description": "Strategy name e.g. mtf_swing_v1"}
+                "decision": {"type": "string", "description": "The trading decision or thought to validate"}
             },
-            "required": ["strategy"]
+            "required": ["decision"]
         }
     },
     {
-        "name": "get_live_positions",
-        "description": "Get current live trading positions",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_trade_journal",
-        "description": "Get recent trade journal entries",
+        "name": "get_mindset_reminder",
+        "description": "Get a specific mindset reminder by name (risk-first, systematic, scientific, behavioral, patience, engineering)",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "Number of entries to return"}
-            }
+                "mindset_name": {"type": "string", "description": "Name of mindset (e.g., 'risk-first', 'behavioral')"}
+            },
+            "required": ["mindset_name"]
         }
-    },
-    {
-        "name": "get_system_status",
-        "description": "Get RVATF system and risk guard status",
-        "inputSchema": {"type": "object", "properties": {}}
     }
 ]
-
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
-
 def mcp_response(req_id, result):
     return jsonify({"jsonrpc": "2.0", "id": req_id, "result": result})
-
 
 def mcp_error(req_id, code, message):
     return jsonify({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
 
-
 def execute_tool(name, args):
-    if name == "get_watchlist":
-        enabled_only = args.get("enabled_only", False)
-        items = [x for x in WATCHLIST if x["enabled"]] if enabled_only else WATCHLIST
-        return {"count": len(items), "items": items, "time": now_iso()}
+    if name == "get_mindsets":
+        return {"mindsets": MINDSETS, "count": len(MINDSETS), "time": now_iso()}
+    
+    if name == "get_knowledge_domains":
+        return {"domains": KNOWLEDGE_DOMAINS, "count": len(KNOWLEDGE_DOMAINS), "time": now_iso()}
+    
     if name == "get_risk_rules":
-        return {"rules": RISK_RULES, "time": now_iso()}
-    if name == "get_backtest_summary":
-        strategy = args.get("strategy")
-        result = BACKTESTS.get(strategy)
-        if not result:
-            raise ValueError(f"Unknown strategy: {strategy}")
-        return {"summary": result, "time": now_iso()}
-    if name == "get_live_positions":
-        return {"count": len(POSITIONS), "positions": POSITIONS, "time": now_iso()}
-    if name == "get_trade_journal":
-        limit = int(args.get("limit", 20))
-        return {"count": min(limit, len(JOURNAL)), "items": JOURNAL[:limit], "time": now_iso()}
-    if name == "get_system_status":
-        return {
-            "framework": "RVATF",
-            "mode": "read-only",
-            "kill_switch": True,
-            "max_positions": 1,
-            "time": now_iso()
-        }
+        return {"risk_rules": RISK_RULES, "time": now_iso()}
+    
+    if name == "get_prep_checklist":
+        return {"checklist": PREP_CHECKLIST, "count": len(PREP_CHECKLIST), "time": now_iso()}
+    
+    if name == "get_resources":
+        return {"resources": RESOURCES, "count": len(RESOURCES), "time": now_iso()}
+    
+    if name == "check_decision":
+        decision = args.get("decision", "")
+        analysis = f"Checking decision against RVATF mindset: '{decision}'\n\n"
+        
+        violations = []
+        if "override" in decision.lower() or "ignore stop" in decision.lower():
+            violations.append("VIOLATION: Behavioral discipline - never override stops")
+        if "double" in decision.lower() or "increase size" in decision.lower():
+            violations.append("VIOLATION: Risk-first - never increase size to recover losses")
+        if "revenge" in decision.lower():
+            violations.append("VIOLATION: Behavioral discipline - revenge trading forbidden")
+        
+        if violations:
+            analysis += "⚠️ VIOLATIONS DETECTED:\n" + "\n".join(violations)
+        else:
+            analysis += "✓ No obvious violations detected. Remember: think risk-first, systematic, and stay disciplined."
+        
+        return {"decision": decision, "analysis": analysis, "time": now_iso()}
+    
+    if name == "get_mindset_reminder":
+        mindset_name = args.get("mindset_name", "").lower()
+        found = None
+        for m in MINDSETS:
+            if mindset_name in m["name"].lower():
+                found = m
+                break
+        
+        if not found:
+            raise ValueError(f"Mindset '{mindset_name}' not found. Available: risk-first, systematic, scientific, behavioral, patience, engineering")
+        
+        return {"mindset": found, "time": now_iso()}
+    
     raise ValueError(f"Unknown tool: {name}")
-
 
 @app.route("/.well-known/oauth-authorization-server", methods=["GET"])
 @app.route("/.well-known/oauth-authorization-server/", methods=["GET"])
@@ -171,7 +219,6 @@ def oauth_metadata():
         "token_endpoint_auth_methods_supported": ["none", "client_secret_basic"],
         "code_challenge_methods_supported": ["S256"],
     })
-
 
 @app.route("/register", methods=["POST"])
 def register_client():
@@ -200,7 +247,6 @@ def register_client():
     }
     return jsonify(resp), 201
 
-
 @app.route("/authorize", methods=["GET"])
 def authorize():
     redirect_uri = request.args.get("redirect_uri", "")
@@ -209,7 +255,6 @@ def authorize():
     sep = "&" if "?" in redirect_uri else "?"
     location = f"{redirect_uri}{sep}code={code}&state={state}"
     return Response(status=302, headers={"Location": location})
-
 
 @app.route("/token", methods=["POST"])
 def token():
@@ -220,20 +265,18 @@ def token():
         "scope": "mcp",
     })
 
-
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"ok": True, "service": "rvatf-mcp", "time": now_iso()})
-
+    return jsonify({"ok": True, "service": "rvatf-mindset-mcp", "time": now_iso()})
 
 @app.route("/", methods=["POST", "GET"])
 @app.route("/mcp", methods=["POST", "GET"])
 def mcp_endpoint():
     if request.method == "GET":
         return jsonify({
-            "name": "RVATF MCP Connector",
+            "name": "RVATF Mindset Connector",
             "version": "2.0.0",
-            "description": "RVATF trading framework connector for NSE markets"
+            "description": "RVATF trading mindset framework for disciplined systematic trading"
         })
 
     data = request.get_json(force=True, silent=True) or {}
@@ -248,7 +291,7 @@ def mcp_endpoint():
                 "tools": {"listChanged": False}
             },
             "serverInfo": {
-                "name": "RVATF MCP Connector",
+                "name": "RVATF Mindset Connector",
                 "version": "2.0.0"
             }
         })
@@ -276,7 +319,6 @@ def mcp_endpoint():
         return mcp_response(req_id, {})
 
     return mcp_error(req_id, -32601, f"Method not found: {method}")
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8787))
