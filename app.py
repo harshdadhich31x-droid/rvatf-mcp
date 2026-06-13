@@ -490,6 +490,178 @@ def mcp_endpoint():
     
     return mcp_error(req_id, -32601, f"Method not found: {method}")
 
+
+# --- NEW ENDPOINTS v3 ---
+
+# MTF Watchlist
+MTF_STOCKS = [
+    {"symbol": "RELIANCE", "exchange": "NSE", "sector": "Energy", "mtf_eligible": True, "avg_volume_cr": 850, "notes": "High liquidity, suitable for MTF swing"},
+    {"symbol": "HDFCBANK", "exchange": "NSE", "sector": "Banking", "mtf_eligible": True, "avg_volume_cr": 1200, "notes": "Strong trend stock, tight spreads"},
+    {"symbol": "INFY", "exchange": "NSE", "sector": "IT", "mtf_eligible": True, "avg_volume_cr": 600, "notes": "IT bellwether, reacts to global cues"},
+    {"symbol": "TCS", "exchange": "NSE", "sector": "IT", "mtf_eligible": True, "avg_volume_cr": 550, "notes": "Large cap IT, low volatility swing"},
+    {"symbol": "ICICIBANK", "exchange": "NSE", "sector": "Banking", "mtf_eligible": True, "avg_volume_cr": 900, "notes": "Strong bank with consistent trend"},
+    {"symbol": "TATAMOTORS", "exchange": "NSE", "sector": "Auto", "mtf_eligible": True, "avg_volume_cr": 700, "notes": "High beta, good for breakout plays"},
+    {"symbol": "SBIN", "exchange": "NSE", "sector": "Banking", "mtf_eligible": True, "avg_volume_cr": 1100, "notes": "PSU bank, budget sensitive"},
+    {"symbol": "BAJFINANCE", "exchange": "NSE", "sector": "NBFC", "mtf_eligible": True, "avg_volume_cr": 450, "notes": "High quality NBFC, trend follower"}
+]
+
+@app.route("/api/mtf-stocks", methods=["GET"])
+def api_mtf_stocks():
+    sector = request.args.get("sector", "").upper()
+    stocks = MTF_STOCKS
+    if sector:
+        stocks = [s for s in stocks if s["sector"].upper() == sector]
+    return jsonify({
+        "version": VERSION,
+        "mtf_stocks": stocks,
+        "count": len(stocks),
+        "note": "Filter by ?sector=Banking|IT|Auto|NBFC|Energy",
+        "mtf_interest_per_day": "0.0342% (Dhan base slab)",
+        "time": now_iso()
+    })
+
+
+# Risk Check
+@app.route("/api/risk-check", methods=["GET"])
+def api_risk_check():
+    try:
+        entry = float(request.args.get("entry", 0))
+        stop = float(request.args.get("stop", 0))
+        capital = float(request.args.get("capital", 1000000))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Pass ?entry=PRICE&stop=PRICE&capital=AMOUNT (numbers only)"}), 400
+
+    if entry <= 0 or stop <= 0:
+        return jsonify({"error": "entry and stop must be > 0"}), 400
+    if stop >= entry:
+        return jsonify({"error": "stop must be below entry price"}), 400
+
+    risk_per_share = entry - stop
+    sl_pct = (risk_per_share / entry) * 100
+
+    # RVATF sizing: min(N_stop, N_gap, N_expo)
+    risk_amount_1pct = capital * 0.01
+    risk_amount_05pct = capital * 0.005
+    gap_pct = 0.08
+    gap_cap_pct = 0.04
+    max_exposure = capital * 1.5  # ~1.5x capital via MTF
+
+    n_stop = risk_amount_1pct / risk_per_share
+    n_gap = (gap_cap_pct * capital) / (gap_pct * entry)
+    n_expo = max_exposure / entry
+    shares = int(min(n_stop, n_gap, n_expo))
+
+    position_value = shares * entry
+    max_loss_sl = shares * risk_per_share
+    max_loss_gap = shares * entry * gap_pct
+    t1 = round(entry * 1.015, 2)
+    t2 = round(entry * 1.025, 2)
+    rr_ratio = round((t1 - entry) / risk_per_share, 2)
+
+    status = "OK"
+    warnings = []
+    if sl_pct > 2.0:
+        warnings.append(f"SL width {sl_pct:.2f}% is wide (RVATF target: 1.2-1.5%)")
+    if sl_pct < 0.5:
+        warnings.append(f"SL width {sl_pct:.2f}% is very tight — slippage risk")
+    if max_loss_gap / capital > 0.05:
+        warnings.append(f"Gap risk {(max_loss_gap/capital*100):.2f}% exceeds 4% cap — reduce size")
+        status = "WARNING"
+    if shares == 0:
+        warnings.append("Position size is 0 — check your inputs")
+        status = "BLOCK"
+
+    return jsonify({
+        "version": VERSION,
+        "status": status,
+        "inputs": {"entry": entry, "stop": stop, "capital": capital},
+        "sizing": {
+            "shares": shares,
+            "position_value": round(position_value, 2),
+            "sl_width_pct": round(sl_pct, 2),
+            "n_stop": int(n_stop),
+            "n_gap": int(n_gap),
+            "n_expo": int(n_expo),
+            "binding_constraint": "n_gap" if int(n_gap) == shares else ("n_stop" if int(n_stop) == shares else "n_expo")
+        },
+        "risk": {
+            "max_loss_if_sl_hit": round(max_loss_sl, 2),
+            "max_loss_if_8pct_gap": round(max_loss_gap, 2),
+            "loss_pct_of_capital_sl": round(max_loss_sl / capital * 100, 2),
+            "loss_pct_of_capital_gap": round(max_loss_gap / capital * 100, 2)
+        },
+        "targets": {"T1": t1, "T2": t2, "rr_at_T1": rr_ratio},
+        "warnings": warnings,
+        "time": now_iso()
+    })
+
+
+# Market Status (NSE)
+@app.route("/api/market-status", methods=["GET"])
+def api_market_status():
+    now_ist = datetime.now(timezone.utc)
+    # IST = UTC + 5:30
+    ist_hour = (now_ist.hour + 5) % 24
+    ist_min = now_ist.minute + 30
+    if ist_min >= 60:
+        ist_hour = (ist_hour + 1) % 24
+        ist_min -= 60
+    ist_weekday = now_ist.weekday()  # 0=Mon, 6=Sun
+
+    is_weekend = ist_weekday >= 5
+    market_open_time = (9, 15)
+    market_close_time = (15, 30)
+    pre_open_start = (9, 0)
+    pre_open_end = (9, 15)
+
+    current_minutes = ist_hour * 60 + ist_min
+    open_minutes = market_open_time[0] * 60 + market_open_time[1]
+    close_minutes = market_close_time[0] * 60 + market_close_time[1]
+    pre_open_start_min = pre_open_start[0] * 60 + pre_open_start[1]
+
+    if is_weekend:
+        status = "CLOSED"
+        session = "Weekend"
+        next_open = "Monday 09:15 IST"
+    elif current_minutes < pre_open_start_min:
+        status = "CLOSED"
+        session = "Pre-market (not yet open)"
+        next_open = "Today 09:15 IST"
+    elif pre_open_start_min <= current_minutes < open_minutes:
+        status = "PRE-OPEN"
+        session = "Pre-open session (09:00-09:15)"
+        next_open = "Today 09:15 IST"
+    elif open_minutes <= current_minutes <= close_minutes:
+        status = "OPEN"
+        session = "Regular trading session"
+        next_open = "N/A (market is open)"
+        minutes_left = close_minutes - current_minutes
+        return jsonify({
+            "version": VERSION,
+            "market": "NSE/BSE",
+            "status": status,
+            "session": session,
+            "ist_time": f"{ist_hour:02d}:{ist_min:02d} IST",
+            "minutes_to_close": minutes_left,
+            "rvatf_note": "Market is OPEN. RVATF entry window: 09:15-10:30 IST for gap setups.",
+            "time": now_iso()
+        })
+    else:
+        status = "CLOSED"
+        session = "After-hours (post 15:30)"
+        next_open = "Tomorrow 09:15 IST" if ist_weekday < 4 else "Monday 09:15 IST"
+
+    return jsonify({
+        "version": VERSION,
+        "market": "NSE/BSE",
+        "status": status,
+        "session": session,
+        "ist_time": f"{ist_hour:02d}:{ist_min:02d} IST",
+        "next_open": next_open,
+        "rvatf_note": "Market CLOSED. Use this time for watchlist prep and RVATF review.",
+        "time": now_iso()
+    })
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8787))
     app.run(host="0.0.0.0", port=port)
